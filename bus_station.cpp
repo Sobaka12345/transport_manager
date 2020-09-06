@@ -1,5 +1,6 @@
 #include <cmath>
 
+#include "json_serialize.hpp"
 #include "bus_station.h"
 #include "bus.h"
 
@@ -85,20 +86,16 @@ double BusStation::operator-(const BusStation& val) const
     return d * EARTH_RADIUS;
 }
 
-void BusStation::printInJson(size_t req_id, ostream& stream)
+void BusStation::printInJson(size_t req_id, Json::JsonArray<Json::JsonBase>& obj)
 {
-    stream << "{";
-    stream << "\"buses\": [";
-    size_t i = 0;
-    for(auto it = buses_.begin(); it != buses_.end(); it++)
-    {
-        stream << "\"" << it->first << "\"";
-        if(i++ < buses_.size() - 1)
-            stream << ",";
-        else
-            stream << "";
-    }
-    stream << "],";
-    stream << "\"request_id\": " << req_id << "";
-    stream << "}";
+    auto& array = obj.BeginObject()
+                     .Key("buses")
+                     .BeginArray();
+
+    for(auto & bus : buses_)
+        obj.String(bus.first);
+
+    array.EndArray()
+         .Key("request_id").Integer(req_id)
+         .EndObject();
 }

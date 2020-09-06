@@ -2,6 +2,7 @@
 #include "bus.h"
 #include "bus_station.h"
 #include "path_item.h"
+#include "json_serialize.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -24,16 +25,8 @@ TransportManager& TransportManager::createInstance(const vector<Json::Node>& bas
     return instance;
 }
 
-TransportManager::TransportManager(const vector<Json::Node>& base_requests) :
-    renderFuncs_({
-                     { "bus_lines", std::bind(&TransportManager::renderBusLines, this) },
-                     { "bus_labels", std::bind(&TransportManager::renderBusLabels, this) },
-                     { "stop_points", std::bind(&TransportManager::renderStationPoints, this) },
-                     { "stop_labels", std::bind(&TransportManager::renderStationLabels, this) },
-
-                 })
+TransportManager::TransportManager(const vector<Json::Node>& base_requests)
 {
-
     vector<int> busQueries;
 
     for(size_t i = 0; i < base_requests.size(); i++)
@@ -77,8 +70,8 @@ TransportManager::TransportManager(const vector<Json::Node>& base_requests) :
     }
 }
 
-void TransportManager::initRouter()
-{
+void TransportManager::updateRouter()
+{    
     size_t vertexCount = stations_.size() * 2;
     graph_ = make_unique<GraphType>(vertexCount);
     size_t waitTime = routingSettings_.busWait;
@@ -146,6 +139,8 @@ TransportManager& TransportManager::setRoutingSettings(const std::map<string, Js
 {
     routingSettings_.busWait = routingSettings.at("bus_wait_time").AsInt();
     routingSettings_.busVelocity = routingSettings.at("bus_velocity").AsDouble() * 1000.0 / 60.0; // km/h => m/s
+
+    updateRouter();
 
     return *this;
 }
@@ -229,7 +224,7 @@ const Svg::Document &TransportManager::getMap()
     map_.emplace();
 
     for(const auto& layer: renderSettings_.renderOrder)
-        renderFuncs_.at(layer)();
+        (this->*renderFuncs_.at(layer))();
 
     return map_.value();
 }
@@ -363,67 +358,92 @@ void TransportManager::renderStationLabels()
     }
 }
 
-//#include <fstream>
+bool TransportManager::performStopQuery(
+            const std::map<string, Json::Node> &query,
+            Json::JsonArray<Json::JsonBase> &arr
+        )
+{
+    if(auto it = stations_.find(query.at("name").AsString()); it != stations_.end())
+        return it->second->printInJson(query.at("id").AsInt(), arr), true;
+    else
+        return false;
+}
+
+bool TransportManager::performBusQuery(
+            const std::map<string, Json::Node> &query,
+            Json::JsonArray<Json::JsonBase> &arr
+        )
+{
+    if(auto it = buses_.find(query.at("name").AsString()); it != buses_.end())
+        return it->second->printInJson(query.at("id").AsInt(), arr), true;
+    else
+        return false;
+}
+
+bool TransportManager::performRouteQuery(
+            const std::map<string, Json::Node> &query,
+            Json::JsonArray<Json::JsonBase> &arr
+        )
+{
+    auto from = stations_.at(query.at("from").AsString())->getWaitVertex();
+    auto to = stations_.at(query.at("to").AsString())->getWaitVertex();
+
+    if(!router_)
+        return false;
+
+    auto info = router_->BuildRoute(from, to);
+
+    if(!info.has_value())
+        return false;
+
+    auto& stationsArr = arr.BeginObject()
+        .Key("total_time").Double(info->weight.getTime())
+        .Key("request_id").Integer(query.at("id").AsInt())
+        .Key("items").BeginArray();
+
+    for(size_t i = 0; i < info->edge_count; i++)
+        graph_->GetEdge(router_->GetRouteEdge(info->id, i)).weight.printInJson(stationsArr);
+
+    stationsArr.EndArray().EndObject();
+
+    return true;
+}
+
+bool TransportManager::performMapQuery(
+            const std::map<string, Json::Node> &query,
+            Json::JsonArray<Json::JsonBase>& arr
+        )
+{
+    stringstream svgMap;
+    getMap().Render(svgMap, true);
+    mapString_ = svgMap.str();
+    arr.BeginObject()
+         .Key("request_id").Integer(query.at("id").AsInt())
+         .Key("map").String(mapString_)
+         .EndObject();
+
+    return true;
+}
+
+template <typename JsonObject>
+void print_error(JsonObject& obj, int req_id, string_view message)
+{
+    obj.BeginObject()
+       .Key("request_id").Integer(req_id)
+       .Key("error_message").String(message)
+       .EndObject();
+}
+
+
 void TransportManager::performQueries(const std::vector<Json::Node>& statRequests, ostream& stream)
 {
-    auto performInfoQuery = [&stream] (const map<string, Json::Node> & map, const auto& container) {
-        if(auto it = container.find(map.at("name").AsString()); it != container.end())
-            it->second->printInJson(map.at("id").AsInt(), stream);
-        else
-            stream << "{\"request_id\": " << map.at("id").AsInt() << ","
-                   << "\"error_message\": " << "\"not found\"}";
-    };
+    auto array = Json::PrintJsonArray(stream);
 
-    stream << "[";
-
-    for(size_t i = 0; i < statRequests.size(); i++)
+    for(auto& req : statRequests)
     {
-        const auto & map = statRequests[i].AsMap();
+        const auto & map = req.AsMap();
         string type = map.at("type").AsString();
-        if(type == "Bus")
-        {
-            performInfoQuery(map, buses_);
-        } else if(type == "Stop")
-        {
-            performInfoQuery(map, stations_);
-        } else if(type == "Map")
-        {
-            stream << "{\"request_id\":" << map.at("id").AsInt() << ",";
-            stream << "\"map\":\"";
-            getMap().Render(stream, true);
-            stream << "\"}";
-            //ofstream test("biba.svg");
-            //getMap().Render(test);
-        } else
-        {
-            auto from = stations_.at(map.at("from").AsString())->getWaitVertex();
-            auto to = stations_.at(map.at("to").AsString())->getWaitVertex();
-            auto info = router_->BuildRoute(from, to);
-
-            if(!info.has_value())
-            {
-                stream << "{\"error_message\":\"not found\",\"request_id\":"
-                       << map.at("id").AsInt() << "}";
-            } else if(!info->edge_count)
-            {
-                stream << "{\"total_time\":0,\"items\":[],\"request_id\":"
-                       << map.at("id").AsInt() << "}";
-            } else
-            {
-                stream << "{\"items\":[";
-                size_t i = 0;
-                for(; i < info->edge_count - 1; i++)
-                    stream << graph_->GetEdge(router_->GetRouteEdge(info->id, i)).weight << ",";
-                stream << graph_->GetEdge(router_->GetRouteEdge(info->id, i)).weight;
-                stream << "],";
-                stream << "\"request_id\":" << map.at("id").AsInt() << ",";
-                stream << "\"total_time\":" << info->weight.getTime() << "}";
-            }
-        }
-
-        if(i < statRequests.size() - 1)
-            stream << ",";
-        stream << "";
+        if(!(this->*performers_.at(type))(map, array))
+            print_error(array, map.at("request_id").AsInt(), "not_found");
     }
-    stream << "]";
 }

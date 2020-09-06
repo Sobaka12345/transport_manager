@@ -100,13 +100,13 @@ double Bus::getCurvature()
     return getRealLength() / getGlobalLength();
 }
 
-void Bus::printInJson(size_t req_id, ostream& stream)
+void Bus::printInJson(size_t req_id, Json::JsonArray<Json::JsonBase>& obj)
 {
-    stream << "{";
-    stream << "\"route_length\": " << getRealLength() << ",";
-    stream << "\"request_id\": " << req_id << ",";
-    stream << "\"curvature\": " << getCurvature() << ",";
-    stream << "\"stop_count\": " << getStationCount() << ",";
-    stream << "\"unique_stop_count\": " << getUniqueStations() << "";
-    stream << "}";
+    obj.BeginObject()
+        .Key("route_length").Double(getRealLength())
+        .Key("request_id").Integer(req_id)
+        .Key("curvature").Double(getCurvature())
+        .Key("stop_count").Integer(getStationCount())
+        .Key("unique_stop_count").Integer(getUniqueStations())
+        .EndObject();
 }

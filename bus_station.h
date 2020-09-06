@@ -10,6 +10,8 @@
 #include <set>
 #include <map>
 
+#include "json_serialize.hpp"
+
 class Bus;
 
 static const size_t  EARTH_RADIUS = 6'371'000;
@@ -30,7 +32,7 @@ public:
 
     double operator-(const BusStation &val) const;
 
-    void printInJson(size_t req_id, std::ostream &stream = std::cout);
+    void printInJson(size_t req_id, Json::JsonArray<Json::JsonBase>& obj);
 
     bool setWaitVertex(size_t vertexID);
     bool setMainVertex(size_t vertexID);

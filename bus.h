@@ -9,6 +9,8 @@
 #include <vector>
 #include <set>
 
+#include "json_serialize.hpp"
+
 class BusStation;
 
 class Bus
@@ -43,7 +45,7 @@ public:
     size_t getUniqueStations();
     bool isLooped() const;
 
-    void printInJson(size_t req_id, std::ostream &stream = std::cout);
+    void printInJson(size_t req_id, Json::JsonArray<Json::JsonBase>& obj);
 };
 
 #endif // BUS_H

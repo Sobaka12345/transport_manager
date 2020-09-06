@@ -16,4 +16,7 @@ add_executable(TRANSPORT_MANAGER main.cpp
                                  path_item.h
                                  json.h
                                  json.cpp
+                                 json_serialize.hpp
+                                 json_serialize.cpp
+                                 requester.h
                                  svg.h)

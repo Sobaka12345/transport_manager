@@ -3,7 +3,9 @@
 
 #include <iostream>
 #include <string_view>
+#include <sstream>
 #include <iomanip>
+#include "json_serialize.hpp"
 
 class PathItem
 {
@@ -53,22 +55,24 @@ public:
         return time_ < val.time_;
     }
 
-    friend std::ostream& operator<<(std::ostream& stream, const PathItem& val)
+    template<typename JsonArray>
+    void printInJson(JsonArray& arr) const
     {
-        stream << "{\"time\":" << std::setprecision(6) << val.time_ << ",";
-        switch (val.type_) {
+        auto& obj = arr.BeginObject()
+            .Key("time").Double(time_);
+
+        switch (type_) {
         case DRIVE:
-            stream << "\"span_count\":" << val.spanCount_ << ",";
-            stream << "\"bus\":\"" << val.name_ << "\",";
-            stream << "\"type\":\"Bus\"";
+            obj.Key("span_count").Integer(spanCount_)
+               .Key("bus").String(name_)
+               .Key("type").String("Bus");
             break;
         case WAIT:
-            stream << "\"stop_name\":\"" << val.name_ << "\",";
-            stream << "\"type\":\"Wait\"";
+            obj.Key("stop_name").String(name_)
+               .Key("type").String("Wait");
             break;
         }
-        stream << "}";
-        return stream;
+        obj.EndObject();
     }
 };
 
